@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Authoritarian Interference Tracker</title>
+
+  <!-- Fonts: IBM Plex Sans + Space Mono -->
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+
+  <!-- Leaflet + MarkerCluster + D3 -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
+  <script src="https://unpkg.com/d3@7.9.0/dist/d3.min.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+
+  <link rel="stylesheet" href="./static/css/styles.css"/>
+</head>
+<body>
+  <header class="page-header container">
+    <div class="brand">
+      <h1>AUTHORITARIAN INTERFERENCE TRACKER</h1>
+      <div class="meta-bar">
+        <span>v3 • INDEPENDENT REBUILD</span>
+        <span class="sep">|</span>
+        <span id="total-count">0</span> <span>INCIDENTS</span> 
+      </div>
+    </div>
+
+    <div class="filters">
+      <div class="date-row">
+        <label>Start</label><input type="date" id="start"/>
+        <label>End</label><input type="date" id="end"/>
+        <input id="search" placeholder="Search title/summary/content…" />
+        <button id="clearAll" class="ghost">Clear All</button>
+      </div>
+
+      <div id="applied" class="applied"></div>
+    </div>
+  </header>
+
+  <main class="container grid">
+    <section class="card heat">
+      <div class="card-title">TIMELINE <span class="sub">by Threat Actor × Year</span></div>
+      <div id="heatmap"></div>
+    </section>
+
+    <section class="card stacked">
+      <div class="card-title">INCIDENT TYPES <span class="sub">by Threat Actor</span></div>
+      <div id="stackedbar"></div>
+    </section>
+
+    <section class="card mapcard">
+      <div class="card-title">GLOBAL DISTRIBUTION <span class="sub">by actor share</span></div>
+      <div id="map"></div>
+    </section>
+
+    <section class="card list">
+      <div class="card-title">INCIDENTS <span class="sub">Click tags to filter</span></div>
+      <div id="list"></div>
+      <div class="pager">
+        <button id="prev">Prev</button>
+        <span id="pageinfo"></span>
+        <button id="next">Next</button>
+      </div>
+    </section>
+  </main>
+
+  <footer class="container footnote">
+    <div class="tt">DATA SOURCE VIEW: <code>incidents_denorm</code></div>
+  </footer>
+
+  <script src="./static/js/app.js"></script>
+</body>
+</html>
