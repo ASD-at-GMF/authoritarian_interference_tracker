@@ -9,7 +9,8 @@ import re
 from functools import wraps
 # remove: import requests
 from geopy.geocoders import Nominatim
-
+from urllib.parse import urlparse
+import re
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")  # required for sessions
@@ -53,6 +54,39 @@ def split_csv(s):
         return []
     return [part.strip() for part in s.split(",") if part.strip()]
 
+def extract_domain(url: str) -> str:
+    try:
+        host = urlparse(url).netloc.lower()
+        if host.startswith("www."): host = host[4:]
+        return host
+    except Exception:
+        return ""
+
+def split_and_clean_urls(val):
+    """Accept CSV/semicolon/newline; return unique cleaned URL list."""
+    if not val: return []
+    if isinstance(val, list): parts = val
+    else: parts = re.split(r"[,\n;]+", str(val))
+    out = []
+    for p in parts:
+        p = p.strip()
+        if p:
+            # simple scheme add for bare domains
+            if "://" not in p and "." in p:
+                p = "https://" + p
+            out.append(p)
+    return sorted(set(out))
+
+def get_or_create_source(conn, url: str):
+    """Ensure sources(url, domain) exists; return id."""
+    if not url: return None
+    dom = extract_domain(url)
+    cur = conn.cursor()
+    row = cur.execute("SELECT id FROM sources WHERE url = ?", (url,)).fetchone()
+    if row: return row["id"]
+    cur.execute("INSERT INTO sources (url, domain) VALUES (?, ?)", (url, dom))
+    return cur.lastrowid
+
 
 def load_centroids_from_db():
     conn = get_db()
@@ -89,6 +123,9 @@ def filter_incident(inc, filters):
     if filters.get("tools"):
         if not set(split_csv(inc.get("tools"))).intersection(filters["tools"]):
             return False
+    if filters.get("sources"):
+        if not set(split_csv(inc.get("sources"))).intersection(filters["sources"]):
+            return False
 
     # Search text (title + content + excerpt)
     q = filters.get("q")
@@ -106,6 +143,8 @@ def incident_to_dict(row):
     d["countries"] = split_csv(d.get("countries"))
     d["actors"]    = split_csv(d.get("actors"))
     d["tools"]     = split_csv(d.get("tools"))
+    d["sources"]     = split_csv(d.get("source_domains")) if "source_domains" in d else []
+    d["source_urls"] = split_csv(d.get("source_urls"))    if "source_urls" in d else []
     return d
 
 def collect_meta(incidents):
@@ -204,7 +243,8 @@ def get_or_create_tool(conn, name: str):
 # ---------- Routes ----------
 @app.route("/")
 def index():
-    return render_template("index.html")
+    is_admin = session.get("admin", False)
+    return render_template("index.html", is_admin=is_admin)
 
 @app.route("/api/config")
 def api_config():
@@ -238,9 +278,9 @@ def read_all_incidents():
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
-        SELECT incident_id, post_id, title, link, content_clean, excerpt_clean,
-               date_text, start_date, end_date, display,
-               countries, actors, tools
+        SELECT incident_id, post_id, slug, title, link, content_clean, excerpt_clean,
+               date_text, start_date, end_date, display, published_at,
+               countries, actors, tools, source_urls
         FROM incidents_denorm
         WHERE display IS NULL OR display <> 'hidden'
     """)
@@ -268,7 +308,9 @@ def api_incidents():
         "end": to_date(end) if end else None,
         "actors": parse_multi("actors"),
         "countries": parse_multi("countries"),
-        "tools": parse_multi("tools"),  # "incident types" from tools field
+        "tools": parse_multi("tools"), 
+        "sources":   parse_multi("sources"),
+# "incident types" from tools field
         "q": request.args.get("q", "").strip() or None
     }
     page = max(1, int(request.args.get("page", 1)))
@@ -391,7 +433,9 @@ def admin_new_incident():
             sel_actors = request.form.getlist("actors_sel")  # multi-select of existing actors
             sel_tools  = request.form.getlist("tools_sel")   # multi-select of existing tools
 
-            # countries still from CSV box (kept as-is)
+            sel_sources = split_and_clean_urls(request.form.get("sources_urls"))
+
+           
             sel_countries = split_and_clean_csv(request.form.get("countries_csv"))
 
             # optional new items (comma/semicolon)
@@ -427,6 +471,13 @@ def admin_new_incident():
                 tid = get_or_create_tool(conn, t)
                 cur.execute("INSERT OR IGNORE INTO incident_tools (incident_id, tool_id) VALUES (?, ?)", (incident_id, tid))
 
+             # after inserting the base incident and linking countries/actors/tools:
+            for u in sel_sources:
+                sid = get_or_create_source(conn, u)
+                if sid:
+                    cur.execute("INSERT OR IGNORE INTO incident_sources (incident_id, source_id) VALUES (?, ?)", (incident_id, sid))
+                        # countries still from CSV box (kept as-is)
+                        
             conn.commit()
             flash(f"Incident #{incident_id} created.", "ok")
             return redirect(url_for("admin_new_incident"))
@@ -446,7 +497,141 @@ def admin_new_incident():
         tools=[r["name"] for r in tools],
         allow_external_geocoding=ALLOW_EXTERNAL_GEOCODING
     )
+    
+@app.route("/admin/incidents")
+@login_required
+def admin_incidents():
+    conn = get_db(); conn.row_factory = sqlite3.Row
+    rows = conn.execute("""
+        SELECT id, post_id, title, start_date
+        FROM incidents
+        ORDER BY COALESCE(start_date, date_text) DESC, id DESC
+        LIMIT 1000
+    """).fetchall()
+    conn.close()
+    return render_template("admin_list.html", items=rows)
 
+@app.route("/admin/incident/<int:incident_id>/edit", methods=["GET","POST"])
+@login_required
+def admin_edit_incident(incident_id):
+    conn = get_db(); conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+
+    # preload vocab
+    countries_all = [r["name"] for r in cur.execute("SELECT name FROM countries ORDER BY name").fetchall()]
+    actors_all    = [r["name"] for r in cur.execute("SELECT name FROM actors ORDER BY name").fetchall()]
+    tools_all     = [r["name"] for r in cur.execute("SELECT name FROM tools ORDER BY name").fetchall()]
+
+    # fetch incident + relations
+    inc = cur.execute("SELECT * FROM incidents WHERE id = ?", (incident_id,)).fetchone()
+    if not inc:
+        flash("Incident not found.", "err")
+        return redirect(url_for("admin_incidents"))
+
+    countries = [r["name"] for r in cur.execute("""
+        SELECT c.name FROM incident_countries ic JOIN countries c ON c.id=ic.country_id
+        WHERE ic.incident_id = ? ORDER BY c.name
+    """, (incident_id,)).fetchall()]
+    actors = [r["name"] for r in cur.execute("""
+        SELECT a.name FROM incident_actors ia JOIN actors a ON a.id=ia.actor_id
+        WHERE ia.incident_id = ? ORDER BY a.name
+    """, (incident_id,)).fetchall()]
+    tools = [r["name"] for r in cur.execute("""
+        SELECT t.name FROM incident_tools it JOIN tools t ON t.id=it.tool_id
+        WHERE it.incident_id = ? ORDER BY t.name
+    """, (incident_id,)).fetchall()]
+    source_urls = [r["url"] for r in cur.execute("""
+        SELECT s.url FROM incident_sources xis JOIN sources s ON s.id=xis.source_id
+        WHERE xis.incident_id = ? ORDER BY s.domain
+    """, (incident_id,)).fetchall()]
+
+    if request.method == "POST":
+        try:
+            post_id    = int(request.form["post_id"])
+            title      = request.form["title"].strip()
+            link       = request.form.get("link") or None
+            content    = request.form.get("content_clean") or None
+            excerpt    = request.form.get("excerpt_clean") or None
+            date_text  = request.form.get("date_text") or None
+            start_date = request.form.get("start_date") or None
+            end_date   = request.form.get("end_date") or None
+            display    = 1 if request.form.get("display", "on") == "on" else 0
+
+            # selections (multi-selects + “add new”)
+            sel_actors = request.form.getlist("actors_sel")
+            sel_tools  = request.form.getlist("tools_sel")
+            new_actors = split_and_clean_csv(request.form.get("new_actors"))
+            new_tools  = split_and_clean_csv(request.form.get("new_tools"))
+            sel_actors = sorted(set(sel_actors) | set(new_actors))
+            sel_tools  = sorted(set(sel_tools) | set(new_tools))
+
+            sel_countries = split_and_clean_csv(request.form.get("countries_csv"))
+            sel_sources   = split_and_clean_urls(request.form.get("sources_urls"))
+
+            # update base record
+            cur.execute("""
+                UPDATE incidents
+                   SET post_id=?, title=?, link=?, content_clean=?, excerpt_clean=?, date_text=?, start_date=?, end_date=?, display=?
+                 WHERE id=?
+            """, (post_id, title, link, content, excerpt, date_text, start_date, end_date, display, incident_id))
+
+            # reset junctions
+            cur.execute("DELETE FROM incident_countries WHERE incident_id=?", (incident_id,))
+            cur.execute("DELETE FROM incident_actors    WHERE incident_id=?", (incident_id,))
+            cur.execute("DELETE FROM incident_tools     WHERE incident_id=?", (incident_id,))
+            cur.execute("DELETE FROM incident_sources   WHERE incident_id=?", (incident_id,))
+
+            # reinsert
+            for c in sel_countries:
+                cid = get_or_create_country(conn, c)
+                cur.execute("INSERT OR IGNORE INTO incident_countries (incident_id, country_id) VALUES (?, ?)", (incident_id, cid))
+            for a in sel_actors:
+                aid = get_or_create_actor(conn, a)
+                cur.execute("INSERT OR IGNORE INTO incident_actors (incident_id, actor_id) VALUES (?, ?)", (incident_id, aid))
+            for t in sel_tools:
+                tid = get_or_create_tool(conn, t)
+                cur.execute("INSERT OR IGNORE INTO incident_tools (incident_id, tool_id) VALUES (?, ?)", (incident_id, tid))
+            for u in sel_sources:
+                sid = get_or_create_source(conn, u)
+                if sid:
+                    cur.execute("INSERT OR IGNORE INTO incident_sources (incident_id, source_id) VALUES (?, ?)", (incident_id, sid))
+
+            conn.commit()
+            flash(f"Incident #{incident_id} updated.", "ok")
+            return redirect(url_for("admin_edit_incident", incident_id=incident_id))
+        except Exception as e:
+            conn.rollback()
+            flash(f"Update failed: {e}", "err")
+
+    # render form prefilled
+    return render_template(
+        "admin_new_incident.html",
+        # same template, but with 'incident' populated
+        incident=inc,
+        countries=countries_all,
+        actors=actors_all,
+        tools=tools_all,
+        sel_countries="; ".join(countries),
+        sel_sources="\n".join(source_urls),
+        sel_actors=actors,
+        sel_tools=tools,
+        allow_external_geocoding=ALLOW_EXTERNAL_GEOCODING
+    )
+
+@app.route("/admin/incident/<int:incident_id>/delete", methods=["POST"])
+@login_required
+def admin_delete_incident(incident_id):
+    conn = get_db()
+    try:
+        conn.execute("DELETE FROM incidents WHERE id = ?", (incident_id,))
+        conn.commit()
+        flash(f"Incident #{incident_id} deleted.", "ok")
+    except Exception as e:
+        conn.rollback()
+        flash(f"Delete failed: {e}", "err")
+    finally:
+        conn.close()
+    return redirect(url_for("admin_incidents"))
 
 
 if __name__ == "__main__":

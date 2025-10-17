@@ -116,53 +116,59 @@
 
 <body class="container admin">
   <div class="hdr">
-    <h1>New Incident</h1>
-    <div class="mono"><a href="/">← Back</a> · <a href="/admin/logout">Logout</a></div>
+    <h1>{{ 'Edit Incident #' ~ incident.id if incident else 'New Incident' }}</h1>
+    <div class="mono">
+      <a href="/">← Back</a> · <a href="/admin/incidents">All Incidents</a> · <a href="/admin/logout">Logout</a>
+    </div>
   </div>
 
   <section class="card">
     <div class="card-title">Compose <span class="sub">Create incident, relate countries, actors, and types</span></div>
     <div style="padding:1rem;">
-      <form method="post">
+      <form method="post"
+        action="{{ url_for('admin_edit_incident', incident_id=incident.id) if incident else url_for('admin_new_incident') }}">
         <div class="frow">
           <label>Post ID (unique)</label>
-          <input type="number" name="post_id" required />
+          <input type="number" name="post_id" required value="{{ incident.post_id if incident else '' }}" />
         </div>
         <div class="frow">
           <label>Title</label>
-          <input type="text" name="title" required />
+          <input type="text" name="title" required value="{{ incident.title if incident else '' }}" />
         </div>
         <div class="frow">
           <label>Link</label>
-          <input type="text" name="link" placeholder="https://…" />
+          <input type="text" name="link" placeholder="https://…" value="{{ incident.link if incident else '' }}" />
         </div>
         <div class="frow">
           <label>Start Date</label>
-          <input type="date" name="start_date" />
+          <input type="date" name="start_date"
+            value="{{ incident.start_date if incident and incident.start_date else '' }}" />
         </div>
         <div class="frow">
           <label>End Date</label>
-          <input type="date" name="end_date" />
+          <input type="date" name="end_date"
+            value="{{ incident.end_date if incident and incident.end_date else '' }}" />
         </div>
 
         <div class="frow" style="grid-column:1 / -1;">
           <label>Excerpt</label>
-          <textarea name="excerpt_clean" placeholder="Short summary…"></textarea>
+          <textarea name="excerpt_clean">{{ incident.excerpt_clean if incident else '' }}</textarea>
         </div>
         <div class="frow" style="grid-column:1 / -1;">
           <label>Content</label>
-          <textarea name="content_clean" placeholder="Longer description…"></textarea>
+          <textarea name="content_clean">{{ incident.content_clean if incident else '' }}</textarea>
         </div>
         <div class="frow" style="grid-column:1 / -1;">
           <label class="mono">Freeform Date Text (optional)</label>
-          <input type="text" name="date_text" placeholder="e.g., 'late 2023', 'January 2024'" />
+          <input type="text" name="date_text" value="{{ incident.date_text if incident else '' }}" />
         </div>
 
         <div class="section">
           <div class="grid2">
             <div class="frow">
               <label>Countries (comma / semicolon separated)</label>
-              <input type="text" name="countries_csv" list="countries-list" placeholder="e.g., Canada; United States" />
+              <input type="text" name="countries_csv" list="countries-list" placeholder="e.g., Canada; United States"
+                value="{{ sel_countries if incident else '' }}" />
               <datalist id="countries-list">
                 {% for c in countries %}<option value="{{ c }}">{% endfor %}
               </datalist>
@@ -179,10 +185,12 @@
           <div class="grid2">
             <div class="frow">
               <label>Threat Actors (multi-select)</label>
-              <select name="actors_sel" multiple size="8"
-                style="width:100%; padding:.4rem; border:1px solid #ddd; border-radius:.5rem;">
-                {% for a in actors %}<option value="{{ a }}">{{ a }}</option>{% endfor %}
+              <select name="actors_sel" multiple size="8" style="...">
+                {% for a in actors %}
+                <option value="{{ a }}" {% if incident and a in sel_actors %}selected{% endif %}>{{ a }}</option>
+                {% endfor %}
               </select>
+
               <label class="small">Add new threat actors (comma/semicolon):</label>
               <input type="text" name="new_actors" placeholder="e.g., Sandworm; APT10" />
               <div class="small mono">Tip: Cmd/Ctrl-click to select multiple.</div>
@@ -190,9 +198,10 @@
 
             <div class="frow">
               <label>Incident Types (multi-select)</label>
-              <select name="tools_sel" multiple size="8"
-                style="width:100%; padding:.4rem; border:1px solid #ddd; border-radius:.5rem;">
-                {% for t in tools %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+              <select name="tools_sel" multiple size="8" style="...">
+                {% for t in tools %}
+                <option value="{{ t }}" {% if incident and t in sel_tools %}selected{% endif %}>{{ t }}</option>
+                {% endfor %}
               </select>
               <label class="small">Add new incident types (comma/semicolon):</label>
               <input type="text" name="new_tools" placeholder="e.g., Cyber; Coercion; Propaganda" />
@@ -200,12 +209,26 @@
             </div>
           </div>
         </div>
+        <div class="section">
+          <div class="frow">
+            <label>Source URLs (one per line or comma/semicolon separated)</label>
+            <textarea name="sources_urls" placeholder="https://example.com/article-1
+https://another.org/report">{{ sel_sources if incident else '' }}</textarea>
+          </div>
+        </div>
 
 
         <div class="section actions">
-          <label><input type="checkbox" name="display" checked /> Publish / display in dashboard</label>
-          <button type="submit">Save Incident</button>
-          <span class="small mono">Tip: Post ID must be unique.</span>
+          <label><input type="checkbox" name="display" {% if not incident or incident.display %}checked{% endif %} />
+            Publish / display</label>
+          <button type="submit">{{ 'Save Changes' if incident else 'Save Incident' }}</button>
+          {% if incident %}
+          <form method="post" action="{{ url_for('admin_delete_incident', incident_id=incident.id) }}"
+            onsubmit="return confirm('Delete incident #{{ incident.id }}?');">
+            <button type="submit">Delete</button>
+          </form>
+          {% endif %}
+          <span class="small mono">Post ID must be unique.</span>
         </div>
       </form>
     </div>

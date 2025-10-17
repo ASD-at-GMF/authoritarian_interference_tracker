@@ -135,6 +135,21 @@ html, body { margin: 0; padding: 0; background: var(--bg-soft); color: var(--tex
 .tool-lab-group, .actor-lab-group { 
   transition: transform 150ms ease; 
 }
+
+/* Admin links */
+.admin-link, .admin-edit-link {
+  text-decoration: none; 
+  font-size: 14px; 
+  opacity: 0.7;
+  margin-left: .5rem;
+  transition: opacity 150ms ease;
+}
+.admin-link:hover, .admin-edit-link:hover {
+  opacity: 1;
+}
+.card-title .admin-link {
+  margin-left: auto;
+}
 .flash-ok { background:#eaf5ef; border:1px solid #cde7d6; color:#0b3d2e; padding:.5rem .75rem; border-radius:.5rem; }
 .flash-err { background:#fdeeee; border:1px solid #f3c9c9; color:#7a1616; padding:.5rem .75rem; border-radius:.5rem; }
 
@@ -146,3 +161,5 @@ select[multiple] option:checked {
   background: rgba(207,46,46,0.12);
   color: #111;
 }
+.tags-row { display:flex; gap:.5rem; align-items:flex-start; justify-content:space-between; margin-top:.35rem; }
+.tags-right { margin-left:auto; display:flex; gap:.4rem; flex-wrap:wrap; }

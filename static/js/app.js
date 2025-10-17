@@ -5,25 +5,24 @@ const state = {
   page: 1,
   pageSize: 25,
   filters: {
-    start: null,
-    end: null,
-    q: "",
+    start: null, end: null, q: "",
     actors: new Set(),
     countries: new Set(),
-    tools: new Set()
+    tools: new Set(),
+    sources: new Set()   // NEW
   }
 };
 // --- Color helpers
 const TOOL_ACCENTS = [
-  "accent_orange","accent_yellow","accent_green","accent_teal",
-  "accent_lightblue","accent_blue","accent_purple","accent_pink"
+  "accent_orange", "accent_yellow", "accent_green", "accent_teal",
+  "accent_lightblue", "accent_blue", "accent_purple", "accent_pink"
 ];
 
 const toolColorMap = {};
 const actorColorMap = {};
 let sortedTools = []; // Cache for alphabetically sorted tools
 
-function actorColor(a){
+function actorColor(a) {
   // Prefer explicit config colors (Russia/China predefined)
   const base = (config && config.actor_palette) || {};
   if (base[a]) return base[a];
@@ -45,23 +44,23 @@ function initializeToolColors(allTools) {
   });
 }
 
-function toolColor(t){
+function toolColor(t) {
   if (toolColorMap[t]) return toolColorMap[t];
-  
+
   // If not initialized, assign based on alphabetical position among known tools
   if (sortedTools.length === 0 || !sortedTools.includes(t)) {
     // Fallback: add to sorted list and reinitialize
     const currentTools = new Set([...sortedTools, t]);
     initializeToolColors(currentTools);
   }
-  
+
   return toolColorMap[t];
 }
 
-function hashCode(s){ let h = 0; for (let i=0; i<s.length; i++) h = (h*31 + s.charCodeAt(i))|0; return h; }
+function hashCode(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return h; }
 
 // Blend from white -> base to encode intensity
-function blendToBase(baseHex, frac){
+function blendToBase(baseHex, frac) {
   const interp = d3.interpolateRgb("#ffffff", baseHex);
   // keep a little saturation at low counts
   return interp(Math.max(0.15, Math.min(1, frac)));
@@ -75,11 +74,11 @@ async function init() {
   meta = await (await fetch("/api/meta")).json();
 
   // UI bindings
-  $("#start").addEventListener("change", () => { state.filters.start = $("#start").value || null; state.page=1; refresh(); });
-  $("#end").addEventListener("change", () => { state.filters.end = $("#end").value || null; state.page=1; refresh(); });
-  $("#search").addEventListener("input", (e) => { state.filters.q = e.target.value.trim(); state.page=1; debounceRefresh(); });
+  $("#start").addEventListener("change", () => { state.filters.start = $("#start").value || null; state.page = 1; refresh(); });
+  $("#end").addEventListener("change", () => { state.filters.end = $("#end").value || null; state.page = 1; refresh(); });
+  $("#search").addEventListener("input", (e) => { state.filters.q = e.target.value.trim(); state.page = 1; debounceRefresh(); });
   $("#clearAll").addEventListener("click", clearAll);
-  $("#prev").addEventListener("click", () => { if (state.page > 1) { state.page--; refresh(); }});
+  $("#prev").addEventListener("click", () => { if (state.page > 1) { state.page--; refresh(); } });
   $("#next").addEventListener("click", () => { state.page++; refresh(); });
 
   await refresh();
@@ -99,6 +98,8 @@ function currentParams() {
   if (state.filters.actors.size) p.set("actors", Array.from(state.filters.actors).join(","));
   if (state.filters.countries.size) p.set("countries", Array.from(state.filters.countries).join(","));
   if (state.filters.tools.size) p.set("tools", Array.from(state.filters.tools).join(","));
+  if (state.filters.sources.size) p.set("sources", Array.from(state.filters.sources).join(","));
+
   p.set("page", state.page);
   p.set("page_size", state.pageSize);
   return p.toString();
@@ -109,7 +110,7 @@ async function refresh() {
   const data = await res.json();
 
   $("#total-count").textContent = data.total;
-  $("#pageinfo").textContent = `Page ${data.page} • ${Math.min(data.page*data.page_size, data.total)} of ${data.total}`;
+  $("#pageinfo").textContent = `Page ${data.page} • ${Math.min(data.page * data.page_size, data.total)} of ${data.total}`;
   renderApplied();
 
   renderHeatmap(data.heatmap);
@@ -131,9 +132,10 @@ function renderApplied() {
       if (group === "actors") state.filters.actors.delete(val);
       if (group === "countries") state.filters.countries.delete(val);
       if (group === "tools") state.filters.tools.delete(val);
-      if (group === "start") state.filters.start = null, $("#start").value="";
-      if (group === "end") state.filters.end = null, $("#end").value="";
-      if (group === "q") state.filters.q = "", $("#search").value="";
+
+      if (group === "start") state.filters.start = null, $("#start").value = "";
+      if (group === "end") state.filters.end = null, $("#end").value = "";
+      if (group === "q") state.filters.q = "", $("#search").value = "";
       state.page = 1; refresh();
     });
     wrap.appendChild(d);
@@ -148,9 +150,9 @@ function renderApplied() {
 }
 
 function clearAll() {
-  state.filters.start = null; $("#start").value="";
-  state.filters.end = null; $("#end").value="";
-  state.filters.q = ""; $("#search").value="";
+  state.filters.start = null; $("#start").value = "";
+  state.filters.end = null; $("#end").value = "";
+  state.filters.q = ""; $("#search").value = "";
   state.filters.actors.clear();
   state.filters.countries.clear();
   state.filters.tools.clear();
@@ -165,7 +167,7 @@ function renderHeatmap(rows) {
 
   if (!rows.length) { el.append("div").text("No data."); return; }
 
-  const years = Array.from(new Set(rows.map(d => d.year))).sort((a,b) => a-b);
+  const years = Array.from(new Set(rows.map(d => d.year))).sort((a, b) => a - b);
   const actors = Array.from(new Set(rows.map(d => d.actor))).sort();
 
   const gridW = Math.min(680, document.querySelector(".heat").clientWidth - 24);
@@ -198,7 +200,7 @@ function renderHeatmap(rows) {
     .style("stroke-width", 1);
 
   actorLabelGroups.append("text")
-    .attr("x", 40).attr("y", d => (y(d) ?? 0) + (y.bandwidth()/2) + 4)
+    .attr("x", 40).attr("y", d => (y(d) ?? 0) + (y.bandwidth() / 2) + 4)
     .attr("text-anchor", "middle").attr("class", "lab-actor axis-click")
     .style("font-size", "11px")
     .style("fill", "#111")
@@ -207,14 +209,14 @@ function renderHeatmap(rows) {
   // Year labels: show every ~5th
   const yearLabels = years.filter((_, i) => i % 5 === 0);
   svg.selectAll(".lab-year").data(yearLabels).enter().append("text")
-    .attr("x", d => (x(d) ?? 0) + (x.bandwidth()/2))
-    .attr("y", gridH + 20).attr("text-anchor","middle")
+    .attr("x", d => (x(d) ?? 0) + (x.bandwidth() / 2))
+    .attr("y", gridH + 20).attr("text-anchor", "middle")
     .attr("class", "lab-year axis-click")
     .style("font-size", "11px")
     .text(d => d)
     .on("click", (_, yr) => {
       $("#start").value = `${yr}-01-01`; state.filters.start = $("#start").value;
-      $("#end").value = `${yr}-12-31`;   state.filters.end = $("#end").value;
+      $("#end").value = `${yr}-12-31`; state.filters.end = $("#end").value;
       state.page = 1; refresh();
     });
 
@@ -232,7 +234,7 @@ function renderHeatmap(rows) {
     .on("click", (_, d) => {
       toggleSet(state.filters.actors, d.actor);
       $("#start").value = `${d.year}-01-01`; state.filters.start = $("#start").value;
-      $("#end").value = `${d.year}-12-31`;   state.filters.end = $("#end").value;
+      $("#end").value = `${d.year}-12-31`; state.filters.end = $("#end").value;
       state.page = 1; refresh();
     })
     .append("title").text(d => `${d.actor} • ${d.year}: ${d.count}`);
@@ -270,7 +272,7 @@ function renderHeatmap(rows) {
   // Tool labels — styled like tags with light background and dark text
   const labelGroups = svg.selectAll(".tool-lab-group").data(tools).enter().append("g")
     .attr("class", "tool-lab-group axis-click")
-    .on("click", (_, tool) => { toggleSet(state.filters.tools, tool); state.page=1; refresh(); });
+    .on("click", (_, tool) => { toggleSet(state.filters.tools, tool); state.page = 1; refresh(); });
 
   labelGroups.append("rect")
     .attr("x", 10).attr("y", d => (y(d) ?? 0) + 2)
@@ -281,7 +283,7 @@ function renderHeatmap(rows) {
     .style("stroke-width", 1);
 
   labelGroups.append("text")
-    .attr("x", 77).attr("y", d => (y(d) ?? 0) + y.bandwidth()/2 + 4)
+    .attr("x", 77).attr("y", d => (y(d) ?? 0) + y.bandwidth() / 2 + 4)
     .attr("text-anchor", "middle").attr("class", "axis-click")
     .style("font-size", "11px")
     .style("fill", "#111")
@@ -329,9 +331,9 @@ function initMap() {
       const counts = {};
       cluster.getAllChildMarkers().forEach(m => {
         const parts = m.options.actorCounts || {};
-        for (const [a, c] of Object.entries(parts)) counts[a] = (counts[a]||0) + c;
+        for (const [a, c] of Object.entries(parts)) counts[a] = (counts[a] || 0) + c;
       });
-      const tot = Object.values(counts).reduce((a,b)=>a+b,0) || 1;
+      const tot = Object.values(counts).reduce((a, b) => a + b, 0) || 1;
       const donutData = donutSVG(counts, tot);
       const size = donutData.containerSize;
       const anchor = size / 2;
@@ -360,7 +362,7 @@ function renderMap(countryRows, meta) {
   for (const [country, counts] of Object.entries(byCountry)) {
     const m = meta[country];
     if (!m) continue;
-    const tot = Object.values(counts).reduce((a,b)=>a+b,0);
+    const tot = Object.values(counts).reduce((a, b) => a + b, 0);
     const donutData = donutSVG(counts, tot);
     const size = donutData.containerSize;
     const anchor = size / 2;
@@ -397,7 +399,7 @@ function calculateDonutRadius(total, isCluster = false) {
   // Base size for single incidents, scale up with more incidents
   const minRadius = isCluster ? 20 : 16;
   const maxRadius = isCluster ? 40 : 32;
-  
+
   // Logarithmic scaling for better visual distribution
   const scale = Math.log(total + 1) / Math.log(101); // normalized to 0-1 for up to 100 incidents
   return minRadius + (maxRadius - minRadius) * Math.min(scale, 1);
@@ -405,19 +407,19 @@ function calculateDonutRadius(total, isCluster = false) {
 
 function donutSVG(counts, total = null) {
   const actors = Object.keys(counts);
-  total = total || actors.reduce((s,a)=>s+counts[a],0) || 1;
-  
+  total = total || actors.reduce((s, a) => s + counts[a], 0) || 1;
+
   // Calculate dynamic radius based on total incidents
   const r = calculateDonutRadius(total);
   const containerSize = Math.max(44, r * 2 + 8); // Ensure minimum container size with padding
-  
-  const arc = d3.arc().innerRadius(r*0.55).outerRadius(r);
+
+  const arc = d3.arc().innerRadius(r * 0.55).outerRadius(r);
   let start = 0;
   const color = actorColorScale(actors);
 
   const paths = actors.map(a => {
     const val = counts[a];
-    const angle = (val/total) * 2 * Math.PI;
+    const angle = (val / total) * 2 * Math.PI;
     const d = arc({ startAngle: start, endAngle: start + angle });
     const fill = color(a);
     start += angle;
@@ -425,7 +427,7 @@ function donutSVG(counts, total = null) {
   }).join("");
 
   return {
-    svg: `<svg viewBox="${-r} ${-r} ${r*2} ${r*2}" width="${r*2}" height="${r*2}">${paths}</svg>`,
+    svg: `<svg viewBox="${-r} ${-r} ${r * 2} ${r * 2}" width="${r * 2}" height="${r * 2}">${paths}</svg>`,
     radius: r,
     containerSize: containerSize
   };
@@ -439,37 +441,62 @@ function renderList(incidents) {
     const d = document.createElement("div");
     d.className = "incident";
     const dt = (inc.start_date || inc.date_text || "").split("T")[0];
-    const link = inc.link ? `<a href="${inc.link}" target="_blank" rel="noopener">Source ↗</a>` : "";
+
+    // left = actors/countries/tools ; right = sources
+    const leftTags = `
+      ${inc.actors.map(a => `<span class="tag tag-actor" data-v="${a}" style="background:${blendToBase(actorColor(a), 0.25)};border-color:${actorColor(a)};color:#111;">${a}</span>`).join("")}
+      ${inc.countries.map(c => `<span class="tag tag-country" data-v="${c}">${c}</span>`).join("")}
+      ${inc.tools.map(t => `<span class="tag tag-tool" data-v="${t}" style="background:${blendToBase(toolColor(t), 0.25)};border-color:${toolColor(t)};color:#111;">${t}</span>`).join("")}
+    `;
+
+    const rightTags = `
+      ${(inc.source_urls|| []).map(s => {
+        const domain = extractDomain(s);
+        return `<a href="${s}" target="_blank" rel="noopener" class="tag tag-source" data-v="${s}" title="${s}" style="background:${blendToBase("lightgrey", 0.25)};border-color:"lightgrey";color:#111;text-decoration:none;">${domain}</a>`;
+      }).join("")}
+    `;
+
+    const adminEditLink = window.isAdmin ? 
+      `<a href="/admin/incident/${inc.incident_id}/edit" class="admin-edit-link" title="Edit Incident">✏️</a>` : '';
+    
     d.innerHTML = `
-      <div class="title">${inc.title || "(untitled)"} ${link}</div>
+      <div class="title">
+        ${inc.title || "(untitled)"}
+        ${adminEditLink}
+      </div>
       <div class="meta">
         <span>${dt || "n.d."}</span>
         <span>POST# ${inc.post_id ?? "-"}</span>
         <span>ID ${inc.incident_id}</span>
       </div>
-      <div class="excerpt">${(inc.excerpt_clean || inc.content_clean || "").slice(0, 320)}</div>
-      <div class="tags">
-        ${inc.actors.map(a => `<span class="tag tag-actor" data-v="${a}" style="background:${blendToBase(actorColor(a),0.25)};border-color:${actorColor(a)};color:#111;">${a}</span>`).join("")}
-        ${inc.countries.map(c => `<span class="tag tag-country" data-v="${c}">${c}</span>`).join("")}
-        ${inc.tools.map(t => `<span class="tag tag-tool" data-v="${t}" style="background:${blendToBase(toolColor(t),0.25)};border-color:${toolColor(t)};color:#111;">${t}</span>`).join("")}
+      <div class="excerpt">${(inc.excerpt_clean || inc.content_clean || "")}</div>
+      <div class="tags-row">
+        <div class="tags tags-left">${leftTags}</div>
+        <div class="tags tags-right">${rightTags}</div>
       </div>
     `;
     el.appendChild(d);
   });
 
-  // tag clicks -> filters
-  $$(".tag-actor").forEach(t => {
-    t.addEventListener("click", (e) => { toggleSet(state.filters.actors, e.target.dataset.v); state.page=1; refresh(); });
-    if (state.filters.actors.has(t.dataset.v)) t.classList.add("selected");
-  });
-  $$(".tag-country").forEach(t => {
-    t.addEventListener("click", (e) => { toggleSet(state.filters.countries, e.target.dataset.v); state.page=1; refresh(); });
-    if (state.filters.countries.has(t.dataset.v)) t.classList.add("selected");
-  });
-  $$(".tag-tool").forEach(t => {
-    t.addEventListener("click", (e) => { toggleSet(state.filters.tools, e.target.dataset.v); state.page=1; refresh(); });
-    if (state.filters.tools.has(t.dataset.v)) t.classList.add("selected");
-  });
+  // clicks
+  $$(".tag-actor").forEach(t => t.addEventListener("click", (e) => { toggleSet(state.filters.actors, e.target.dataset.v); state.page = 1; refresh(); }));
+  $$(".tag-country").forEach(t => t.addEventListener("click", (e) => { toggleSet(state.filters.countries, e.target.dataset.v); state.page = 1; refresh(); }));
+  $$(".tag-tool").forEach(t => t.addEventListener("click", (e) => { toggleSet(state.filters.tools, e.target.dataset.v); state.page = 1; refresh(); }));
+  // Note: .tag-source are now anchor links that navigate directly, no click handler needed
+
+  // selected state
+  $$(".tag-actor").forEach(t => { if (state.filters.actors.has(t.dataset.v)) t.classList.add("selected"); });
+  $$(".tag-country").forEach(t => { if (state.filters.countries.has(t.dataset.v)) t.classList.add("selected"); });
+  $$(".tag-tool").forEach(t => { if (state.filters.tools.has(t.dataset.v)) t.classList.add("selected"); });
+}
+
+function extractDomain(url) {
+  try {
+    const urlObj = new URL(url);
+    return urlObj.hostname.replace(/^www\./, '');
+  } catch {
+    return url; // fallback if URL parsing fails
+  }
 }
 
 function toggleSet(set, val) {

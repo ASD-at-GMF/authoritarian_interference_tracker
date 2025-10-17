@@ -58,7 +58,12 @@
     </section>
 
     <section class="card list">
-      <div class="card-title">INCIDENTS <span class="sub">Click tags to filter</span></div>
+      <div class="card-title">
+        INCIDENTS <span class="sub">Click tags to filter</span>
+        {% if is_admin %}
+        <a href="/admin/incidents" class="admin-link" title="Manage Incidents">⚙️</a>
+        {% endif %}
+      </div>
       <div id="list"></div>
       <div class="pager">
         <button id="prev">Prev</button>
@@ -72,6 +77,9 @@
     <div class="tt">DATA SOURCE VIEW: <code>incidents_denorm</code></div>
   </footer>
 
+  <script>
+    window.isAdmin = {{ 'true' if is_admin else 'false' }};
+  </script>
   <script src="./static/js/app.js"></script>
 </body>
 </html>

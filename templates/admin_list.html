@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Incidents • Admin</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css"/>
+  <style>
+    table { width:100%; border-collapse: collapse; background:#fff; border-radius:var(--card-radius); overflow:hidden; box-shadow:var(--shadow); }
+    th, td { padding:.55rem .7rem; border-bottom:1px solid rgba(0,0,0,.06); text-align:left; }
+    th { text-transform:uppercase; letter-spacing:.12em; font-size:12px; }
+    tr:hover { background:#fafafa; }
+    .actions a, .actions form button { margin-right:.4rem; }
+    .actions form { display:inline; }
+    .btn { border:1px solid #ddd; background:#fff; border-radius:.45rem; padding:.25rem .5rem; font-size:12px; cursor:pointer; }
+    .btn:hover { border-color: var(--primary-color); color: var(--primary-color); }
+  </style>
+</head>
+<body class="container">
+  <header class="page-header">
+    <div class="brand">
+      <h1>Admin • Incidents</h1>
+      <div class="meta-bar"><a href="/admin/new-incident">+ New Incident</a> · <a href="/admin/logout">Logout</a></div>
+    </div>
+  </header>
+  <main>
+    <table>
+      <thead><tr><th>ID</th><th>Post ID</th><th>Title</th><th>Start</th><th class="actions">Actions</th></tr></thead>
+      <tbody>
+      {% for r in items %}
+        <tr>
+          <td class="mono">{{ r.id }}</td>
+          <td class="mono">{{ r.post_id }}</td>
+          <td>{{ r.title }}</td>
+          <td class="mono">{{ r.start_date or '' }}</td>
+          <td class="actions">
+            <a class="btn" href="/admin/incident/{{ r.id }}/edit">Edit</a>
+            <form method="post" action="/admin/incident/{{ r.id }}/delete" onsubmit="return confirm('Delete incident #{{ r.id }}?');">
+              <button class="btn" type="submit">Delete</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </main>
+</body>
+</html>
