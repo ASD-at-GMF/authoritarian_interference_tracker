@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Admin Login</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css"/>
+  <style>
+    .admin-wrap { max-width: 440px; margin: 8vh auto; background:#fff; border-radius: var(--card-radius); box-shadow: var(--shadow); border:1px solid rgba(0,0,0,.06); }
+    .admin-head { padding: 1rem 1.2rem; border-bottom: 1px solid rgba(0,0,0,.06); text-transform: uppercase; letter-spacing:.12em; font-weight:600;}
+    .admin-body { padding: 1rem 1.2rem; }
+    .frow { display:flex; flex-direction:column; gap:.35rem; margin-bottom: .85rem; }
+    input[type="password"] { padding:.6rem .7rem; border:1px solid #ddd; border-radius:.5rem; }
+    button { padding:.6rem .8rem; border-radius:.5rem; border:1px solid #ddd; background:#fff; cursor:pointer; }
+    button:hover { border-color: var(--primary-color); color: var(--primary-color); }
+    .err { color: var(--primary-color); font-size: 13px; margin-top:.5rem;}
+  </style>
+</head>
+<body class="container">
+  <div class="admin-wrap">
+    <div class="admin-head">Restricted • Admin Login</div>
+    <div class="admin-body">
+      <form method="post">
+        <div class="frow">
+          <label>Password</label>
+          <input type="password" name="password" autocomplete="current-password" required/>
+        </div>
+        <button type="submit">Enter</button>
+        {% if err %}<div class="err">{{ err }}</div>{% endif %}
+      </form>
+    </div>
+  </div>
+</body>
+</html>

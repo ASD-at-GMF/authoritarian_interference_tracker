@@ -4,12 +4,28 @@ import sqlite3
 from datetime import datetime, date
 from dateutil import parser
 from collections import defaultdict, Counter
-from flask import Flask, jsonify, render_template, request, send_from_directory
+from flask import Flask, jsonify, render_template, request, send_from_directory, session, redirect, url_for, flash
+import re
+from functools import wraps
+# remove: import requests
+from geopy.geocoders import Nominatim
 
-DB_PATH = os.environ.get("TRACKER_DB", "./data/incidents.sqlite")  # SQLite file containing the VIEW
-COUNTRY_CENTROIDS_PATH = os.environ.get("COUNTRY_CENTROIDS", "static/data/country_centroids.json")
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")  # required for sessions
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme")          # set in env for prod
+
+ALLOW_EXTERNAL_GEOCODING = os.environ.get("ALLOW_EXTERNAL_GEOCODING", "0") == "1"
+NOMINATIM_USER_AGENT = os.environ.get("NOMINATIM_USER_AGENT", "ait-admin/1.0")
+DB_PATH = os.environ.get("DB_PATH", "./data/incidents.sqlite")
+
+# init geopy (lazy-safe)
+_geocoder = None
+def geocoder():
+    global _geocoder
+    if _geocoder is None:
+        _geocoder = Nominatim(user_agent=NOMINATIM_USER_AGENT, timeout=8)
+    return _geocoder
 
 def get_db():
     conn = sqlite3.connect(DB_PATH)
@@ -109,6 +125,81 @@ def collect_meta(incidents):
         "tools": sorted(tools.items(), key=lambda x: (-x[1], x[0])),
         "years": sorted(years.items())
     }
+
+def slugify(s: str) -> str:
+    s = (s or "").strip().lower()
+    s = re.sub(r"[^\w\s-]", "", s)
+    s = re.sub(r"[\s_-]+", "-", s)
+    return s.strip("-")
+
+def login_required(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if not session.get("admin"):
+            return redirect(url_for("admin_login", next=request.path))
+        return fn(*args, **kwargs)
+    return wrapper
+
+def split_and_clean_csv(val):
+    if not val:
+        return []
+    if isinstance(val, list):
+        vals = val
+    else:
+        vals = re.split(r"[;,]", str(val))
+    return sorted({v.strip() for v in vals if v and v.strip()})
+
+def geocode_country_external(name: str):
+    """Optional Nominatim via geopy. Returns (lat, lon) or (None, None)."""
+    if not ALLOW_EXTERNAL_GEOCODING or not name:
+        return None, None
+    try:
+        loc = geocoder().geocode(name, exactly_one=True)
+        if loc:
+            return float(loc.latitude), float(loc.longitude)
+    except Exception:
+        pass
+    return None, None
+
+def get_or_create_country(conn, name: str):
+    cur = conn.cursor()
+    row = cur.execute("SELECT id, lat, lon FROM countries WHERE name = ?", (name,)).fetchone()
+    if row:
+        cid = row["id"]
+        if (row["lat"] is None or row["lon"] is None):
+            lat, lon = geocode_country_external(name)
+            if lat is not None and lon is not None:
+                cur.execute("UPDATE countries SET lat = ?, lon = ? WHERE id = ?", (lat, lon, cid))
+        return cid
+    lat, lon = geocode_country_external(name)
+    cur.execute("INSERT INTO countries (name, lat, lon) VALUES (?, ?, ?)", (name, lat, lon))
+    return cur.lastrowid
+
+def get_or_create_actor(conn, name: str):
+    cur = conn.cursor()
+    row = cur.execute("SELECT id FROM actors WHERE name = ?", (name,)).fetchone()
+    if row:
+        return row["id"]
+    # generate a unique term_id
+    next_term = cur.execute("SELECT COALESCE(MAX(term_id), 0) + 1 FROM actors").fetchone()[0]
+    cur.execute(
+        "INSERT INTO actors (term_id, name, slug, taxonomy, description) VALUES (?, ?, ?, ?, ?)",
+        (next_term, name, slugify(name), "threat_actor", None),
+    )
+    return cur.lastrowid
+
+def get_or_create_tool(conn, name: str):
+    cur = conn.cursor()
+    row = cur.execute("SELECT id FROM tools WHERE name = ?", (name,)).fetchone()
+    if row:
+        return row["id"]
+    next_term = cur.execute("SELECT COALESCE(MAX(term_id), 0) + 1 FROM tools").fetchone()[0]
+    cur.execute(
+        "INSERT INTO tools (term_id, name, slug, taxonomy, description) VALUES (?, ?, ?, ?, ?)",
+        (next_term, name, slugify(name), "incident_type", None),
+    )
+    return cur.lastrowid
+
 
 # ---------- Routes ----------
 @app.route("/")
@@ -253,6 +344,110 @@ def api_incidents():
 @app.route("/static/data/<path:filename>")
 def static_data(filename):
     return send_from_directory("static/data", filename)
+
+@app.route("/admin/login", methods=["GET", "POST"])
+def admin_login():
+    err = None
+    if request.method == "POST":
+        pw = request.form.get("password", "")
+        if pw == ADMIN_PASSWORD:
+            session["admin"] = True
+            flash("Logged in.", "ok")
+            return redirect(request.args.get("next") or url_for("admin_new_incident"))
+        err = "Incorrect password."
+    return render_template("admin_login.html", err=err)
+
+@app.route("/admin/logout")
+def admin_logout():
+    session.clear()
+    flash("Logged out.", "ok")
+    return redirect(url_for("index"))
+
+@app.route("/admin/new-incident", methods=["GET", "POST"])
+@login_required
+def admin_new_incident():
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+
+    # preload lists for the form
+    countries = cur.execute("SELECT name FROM countries ORDER BY name").fetchall()
+    actors = cur.execute("SELECT name FROM actors ORDER BY name").fetchall()
+    tools = cur.execute("SELECT name FROM tools ORDER BY name").fetchall()
+
+    if request.method == "POST":
+        try:
+            post_id = int(request.form["post_id"])
+            title = request.form["title"].strip()
+            link = request.form.get("link") or None
+            content = request.form.get("content_clean") or None
+            excerpt = request.form.get("excerpt_clean") or None
+            date_text = request.form.get("date_text") or None
+            start_date = request.form.get("start_date") or None
+            end_date = request.form.get("end_date") or None
+            display = 1 if request.form.get("display", "on") == "on" else 0
+
+            # selections from multi-selects
+            sel_actors = request.form.getlist("actors_sel")  # multi-select of existing actors
+            sel_tools  = request.form.getlist("tools_sel")   # multi-select of existing tools
+
+            # countries still from CSV box (kept as-is)
+            sel_countries = split_and_clean_csv(request.form.get("countries_csv"))
+
+            # optional new items (comma/semicolon)
+            new_actors = split_and_clean_csv(request.form.get("new_actors"))
+            new_tools  = split_and_clean_csv(request.form.get("new_tools"))
+
+            # union and de-dup
+            sel_actors = sorted(set(sel_actors) | set(new_actors))
+            sel_tools  = sorted(set(sel_tools)  | set(new_tools))
+
+            # insert incident
+            cur.execute("""
+                INSERT INTO incidents (post_id, title, link, content_clean, excerpt_clean, date_text, start_date, end_date, display)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (post_id, title, link, content, excerpt, date_text, start_date, end_date, display))
+            incident_id = cur.lastrowid
+
+            # relate countries (create if missing; auto-geocode if allowed)
+            for c in sel_countries:
+                if not c: continue
+                cid = get_or_create_country(conn, c)
+                cur.execute("INSERT OR IGNORE INTO incident_countries (incident_id, country_id) VALUES (?, ?)", (incident_id, cid))
+
+            # relate actors (create if missing)
+            for a in sel_actors:
+                if not a: continue
+                aid = get_or_create_actor(conn, a)
+                cur.execute("INSERT OR IGNORE INTO incident_actors (incident_id, actor_id) VALUES (?, ?)", (incident_id, aid))
+
+            # relate tools (create if missing)
+            for t in sel_tools:
+                if not t: continue
+                tid = get_or_create_tool(conn, t)
+                cur.execute("INSERT OR IGNORE INTO incident_tools (incident_id, tool_id) VALUES (?, ?)", (incident_id, tid))
+
+            conn.commit()
+            flash(f"Incident #{incident_id} created.", "ok")
+            return redirect(url_for("admin_new_incident"))
+
+        except sqlite3.IntegrityError as e:
+            conn.rollback()
+            # likely duplicate post_id or FK issue
+            flash(f"DB error: {e}", "err")
+        except Exception as e:
+            conn.rollback()
+            flash(f"Unexpected error: {e}", "err")
+
+    return render_template(
+        "admin_new_incident.html",
+        countries=[r["name"] for r in countries],
+        actors=[r["name"] for r in actors],
+        tools=[r["name"] for r in tools],
+        allow_external_geocoding=ALLOW_EXTERNAL_GEOCODING
+    )
+
+
 
 if __name__ == "__main__":
     app.run(debug=True)

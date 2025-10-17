@@ -135,3 +135,14 @@ html, body { margin: 0; padding: 0; background: var(--bg-soft); color: var(--tex
 .tool-lab-group, .actor-lab-group { 
   transition: transform 150ms ease; 
 }
+.flash-ok { background:#eaf5ef; border:1px solid #cde7d6; color:#0b3d2e; padding:.5rem .75rem; border-radius:.5rem; }
+.flash-err { background:#fdeeee; border:1px solid #f3c9c9; color:#7a1616; padding:.5rem .75rem; border-radius:.5rem; }
+
+select[multiple] {
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  background:#fff;
+}
+select[multiple] option:checked {
+  background: rgba(207,46,46,0.12);
+  color: #111;
+}

@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>New Incident • Admin</title>
+  <link
+    href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;600;700&family=Space+Mono:wght@400;700&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css" />
+  <style>
+    .admin {
+      max-width: 960px;
+      margin: 2rem auto;
+    }
+
+    .hdr {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 1rem;
+    }
+
+    .hdr h1 {
+      margin: 0;
+      text-transform: uppercase;
+      letter-spacing: .12em;
+      font-size: clamp(18px, 2.6vw, 24px);
+    }
+
+    .card form {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1rem;
+    }
+
+    @media(min-width: 900px) {
+      .card form {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    .frow {
+      display: flex;
+      flex-direction: column;
+      gap: .35rem;
+    }
+
+    input[type="text"],
+    input[type="date"],
+    input[type="number"],
+    textarea {
+      padding: .6rem .7rem;
+      border: 1px solid #ddd;
+      border-radius: .5rem;
+      width: 100%;
+      background: #fff;
+    }
+
+    textarea {
+      min-height: 120px;
+    }
+
+    .mono {
+      font-family: 'Space Mono', monospace;
+      font-size: 12px;
+      opacity: .85;
+    }
+
+    .section {
+      grid-column: 1 / -1;
+      border-top: 1px dashed rgba(0, 0, 0, .15);
+      padding-top: .75rem;
+      margin-top: .25rem;
+    }
+
+    .grid2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+
+    .chips {
+      display: flex;
+      gap: .35rem;
+      flex-wrap: wrap;
+    }
+
+    .chipbtn {
+      border: 1px solid #ddd;
+      border-radius: 999px;
+      padding: .25rem .55rem;
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    .chipbtn:hover {
+      border-color: var(--primary-color);
+      color: var(--primary-color);
+    }
+
+    .actions {
+      grid-column: 1 / -1;
+      display: flex;
+      gap: .6rem;
+      align-items: center;
+    }
+
+    .small {
+      font-size: 12px;
+      opacity: .8;
+    }
+  </style>
+</head>
+
+<body class="container admin">
+  <div class="hdr">
+    <h1>New Incident</h1>
+    <div class="mono"><a href="/">← Back</a> · <a href="/admin/logout">Logout</a></div>
+  </div>
+
+  <section class="card">
+    <div class="card-title">Compose <span class="sub">Create incident, relate countries, actors, and types</span></div>
+    <div style="padding:1rem;">
+      <form method="post">
+        <div class="frow">
+          <label>Post ID (unique)</label>
+          <input type="number" name="post_id" required />
+        </div>
+        <div class="frow">
+          <label>Title</label>
+          <input type="text" name="title" required />
+        </div>
+        <div class="frow">
+          <label>Link</label>
+          <input type="text" name="link" placeholder="https://…" />
+        </div>
+        <div class="frow">
+          <label>Start Date</label>
+          <input type="date" name="start_date" />
+        </div>
+        <div class="frow">
+          <label>End Date</label>
+          <input type="date" name="end_date" />
+        </div>
+
+        <div class="frow" style="grid-column:1 / -1;">
+          <label>Excerpt</label>
+          <textarea name="excerpt_clean" placeholder="Short summary…"></textarea>
+        </div>
+        <div class="frow" style="grid-column:1 / -1;">
+          <label>Content</label>
+          <textarea name="content_clean" placeholder="Longer description…"></textarea>
+        </div>
+        <div class="frow" style="grid-column:1 / -1;">
+          <label class="mono">Freeform Date Text (optional)</label>
+          <input type="text" name="date_text" placeholder="e.g., 'late 2023', 'January 2024'" />
+        </div>
+
+        <div class="section">
+          <div class="grid2">
+            <div class="frow">
+              <label>Countries (comma / semicolon separated)</label>
+              <input type="text" name="countries_csv" list="countries-list" placeholder="e.g., Canada; United States" />
+              <datalist id="countries-list">
+                {% for c in countries %}<option value="{{ c }}">{% endfor %}
+              </datalist>
+              <div class="small mono">
+                Auto-geocoding uses DB lat/lon; optional geopy/Nominatim fallback:
+                {{ 'on' if allow_external_geocoding else 'off' }}
+              </div>
+            </div>
+            <div></div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="grid2">
+            <div class="frow">
+              <label>Threat Actors (multi-select)</label>
+              <select name="actors_sel" multiple size="8"
+                style="width:100%; padding:.4rem; border:1px solid #ddd; border-radius:.5rem;">
+                {% for a in actors %}<option value="{{ a }}">{{ a }}</option>{% endfor %}
+              </select>
+              <label class="small">Add new threat actors (comma/semicolon):</label>
+              <input type="text" name="new_actors" placeholder="e.g., Sandworm; APT10" />
+              <div class="small mono">Tip: Cmd/Ctrl-click to select multiple.</div>
+            </div>
+
+            <div class="frow">
+              <label>Incident Types (multi-select)</label>
+              <select name="tools_sel" multiple size="8"
+                style="width:100%; padding:.4rem; border:1px solid #ddd; border-radius:.5rem;">
+                {% for t in tools %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+              </select>
+              <label class="small">Add new incident types (comma/semicolon):</label>
+              <input type="text" name="new_tools" placeholder="e.g., Cyber; Coercion; Propaganda" />
+              <div class="small mono">Tip: Cmd/Ctrl-click to select multiple.</div>
+            </div>
+          </div>
+        </div>
+
+
+        <div class="section actions">
+          <label><input type="checkbox" name="display" checked /> Publish / display in dashboard</label>
+          <button type="submit">Save Incident</button>
+          <span class="small mono">Tip: Post ID must be unique.</span>
+        </div>
+      </form>
+    </div>
+  </section>
+</body>
+
+</html>
